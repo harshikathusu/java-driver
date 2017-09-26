@@ -26,7 +26,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-/** Metadata about a Cassandra node in the cluster. */
+/**
+ * Metadata about a Cassandra node in the cluster.
+ *
+ * <p>This object is mutable, all of its properties may be updated at runtime to reflect the latest
+ * state of the node.
+ */
 public interface Node {
   /**
    * The address that the driver uses to connect to the node. This is the node's broadcast RPC
@@ -67,7 +72,8 @@ public interface Node {
    * are unspecified and may change at any point in time, always check for the existence of a key
    * before using it.
    *
-   * <p>The returned map is immutable.
+   * <p>Note that the returned map is immutable: if the properties change, this is reflected by
+   * publishing a new map instance, therefore you must call this method again to see the changes.
    */
   Map<String, Object> getExtras();
 
