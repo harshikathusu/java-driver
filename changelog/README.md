@@ -4,6 +4,7 @@
 
 ### 4.0.0-alpha2 (in progress)
 
+- [new feature] JAVA-1494: Implement Snappy and LZ4 compression
 - [improvement] JAVA-1597: Fix raw usages of Statement
 - [improvement] JAVA-1542: Enable JaCoCo code coverage
 - [improvement] JAVA-1295: Auto-detect best protocol version in mixed cluster
