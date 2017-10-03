@@ -18,6 +18,8 @@ package com.datastax.oss.driver.api.core;
 import com.datastax.oss.driver.api.core.config.CoreDriverOption;
 import com.datastax.oss.driver.api.core.config.DriverConfigLoader;
 import com.datastax.oss.driver.api.core.config.DriverConfigProfile;
+import com.datastax.oss.driver.api.core.metadata.NodeState;
+import com.datastax.oss.driver.api.core.metadata.NodeStateListener;
 import com.datastax.oss.driver.api.core.type.codec.TypeCodec;
 import com.datastax.oss.driver.internal.core.ContactPoints;
 import com.datastax.oss.driver.internal.core.DefaultCluster;
@@ -39,8 +41,9 @@ import java.util.function.Supplier;
 /** Helper class to build an instance of the default {@link Cluster} implementation. */
 public class ClusterBuilder {
   private DriverConfigLoader configLoader;
-  private Set<InetSocketAddress> programmaticContactPoints = new HashSet<>();
-  private List<TypeCodec<?>> typeCodecs = new ArrayList<>();
+  private final Set<InetSocketAddress> programmaticContactPoints = new HashSet<>();
+  private final List<TypeCodec<?>> typeCodecs = new ArrayList<>();
+  private final Set<NodeStateListener> nodeStateListeners = new HashSet<>();
 
   /**
    * Sets the configuration loader to use.
@@ -116,6 +119,11 @@ public class ClusterBuilder {
     return this;
   }
 
+  public ClusterBuilder addNodeStateListeners(NodeStateListener... newListeners) {
+    Collections.addAll(this.nodeStateListeners, newListeners);
+    return this;
+  }
+
   /**
    * Creates the cluster with the options set by this builder.
    *
@@ -135,7 +143,7 @@ public class ClusterBuilder {
         ContactPoints.merge(programmaticContactPoints, configContactPoints);
 
     InternalDriverContext context = new DefaultDriverContext(configLoader, typeCodecs);
-    return DefaultCluster.init(context, contactPoints);
+    return DefaultCluster.init(context, contactPoints, nodeStateListeners);
   }
 
   /** Convenience method to call {@link #buildAsync()} and block on the result. */

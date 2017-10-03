@@ -22,10 +22,13 @@ import com.datastax.oss.driver.api.core.ProtocolVersion;
 import com.datastax.oss.driver.api.core.config.CoreDriverOption;
 import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.metadata.Metadata;
+import com.datastax.oss.driver.api.core.metadata.NodeState;
+import com.datastax.oss.driver.api.core.metadata.NodeStateListener;
 import com.datastax.oss.driver.api.core.session.Session;
 import com.datastax.oss.driver.internal.core.context.InternalDriverContext;
 import com.datastax.oss.driver.internal.core.control.ControlConnection;
 import com.datastax.oss.driver.internal.core.metadata.MetadataManager;
+import com.datastax.oss.driver.internal.core.metadata.NodeStateEvent;
 import com.datastax.oss.driver.internal.core.metadata.NodeStateManager;
 import com.datastax.oss.driver.internal.core.metadata.SchemaElementKind;
 import com.datastax.oss.driver.internal.core.session.DefaultSession;
@@ -48,8 +51,10 @@ public class DefaultCluster implements Cluster {
   private static final Logger LOG = LoggerFactory.getLogger(DefaultCluster.class);
 
   public static CompletableFuture<Cluster> init(
-      InternalDriverContext context, Set<InetSocketAddress> contactPoints) {
-    DefaultCluster cluster = new DefaultCluster(context, contactPoints);
+      InternalDriverContext context,
+      Set<InetSocketAddress> contactPoints,
+      Set<NodeStateListener> nodeStateListeners) {
+    DefaultCluster cluster = new DefaultCluster(context, contactPoints, nodeStateListeners);
     return cluster.init();
   }
 
@@ -59,11 +64,14 @@ public class DefaultCluster implements Cluster {
   private final MetadataManager metadataManager;
   private final String logPrefix;
 
-  private DefaultCluster(InternalDriverContext context, Set<InetSocketAddress> contactPoints) {
+  private DefaultCluster(
+      InternalDriverContext context,
+      Set<InetSocketAddress> contactPoints,
+      Set<NodeStateListener> nodeStateListeners) {
     LOG.debug("Creating new cluster {}", context.clusterName());
     this.context = context;
     this.adminExecutor = context.nettyOptions().adminEventExecutorGroup().next();
-    this.singleThreaded = new SingleThreaded(context, contactPoints);
+    this.singleThreaded = new SingleThreaded(context, contactPoints, nodeStateListeners);
     this.metadataManager = context.metadataManager();
     this.logPrefix = context.clusterName();
   }
@@ -93,6 +101,18 @@ public class DefaultCluster implements Cluster {
     CompletableFuture<Session> connectFuture = new CompletableFuture<>();
     RunOrSchedule.on(adminExecutor, () -> singleThreaded.connect(keyspace, connectFuture));
     return connectFuture;
+  }
+
+  @Override
+  public Cluster register(NodeStateListener listener) {
+    RunOrSchedule.on(adminExecutor, () -> singleThreaded.register(listener));
+    return this;
+  }
+
+  @Override
+  public Cluster unregister(NodeStateListener listener) {
+    RunOrSchedule.on(adminExecutor, () -> singleThreaded.unregister(listener));
+    return this;
   }
 
   @Override
@@ -126,12 +146,21 @@ public class DefaultCluster implements Cluster {
     // is something really wrong in the client program
     private List<Session> sessions;
     private int sessionCounter;
+    private Set<NodeStateListener> nodeStateListeners;
 
-    private SingleThreaded(InternalDriverContext context, Set<InetSocketAddress> contactPoints) {
+    private SingleThreaded(
+        InternalDriverContext context,
+        Set<InetSocketAddress> contactPoints,
+        Set<NodeStateListener> nodeStateListeners) {
       this.context = context;
       this.nodeStateManager = new NodeStateManager(context);
       this.initialContactPoints = contactPoints;
+      this.nodeStateListeners = nodeStateListeners;
       this.sessions = new ArrayList<>();
+      context
+          .eventBus()
+          .register(
+              NodeStateEvent.class, RunOrSchedule.on(adminExecutor, this::onNodeStateChanged));
     }
 
     private void init() {
@@ -234,6 +263,39 @@ public class DefaultCluster implements Cluster {
       }
     }
 
+    private void register(NodeStateListener listener) {
+      assert adminExecutor.inEventLoop();
+      if (closeWasCalled) {
+        return;
+      }
+      if (nodeStateListeners.add(listener)) {
+        listener.onRegister(DefaultCluster.this);
+      }
+    }
+
+    private void unregister(NodeStateListener listener) {
+      assert adminExecutor.inEventLoop();
+      if (closeWasCalled) {
+        return;
+      }
+      if (nodeStateListeners.remove(listener)) {
+        listener.onUnregister(DefaultCluster.this);
+      }
+    }
+
+    private void onNodeStateChanged(NodeStateEvent event) {
+      assert adminExecutor.inEventLoop();
+      if (event.newState == null) {
+        nodeStateListeners.forEach(listener -> listener.onRemove(event.node));
+      } else if (event.oldState == null && event.newState == NodeState.UNKNOWN) {
+        nodeStateListeners.forEach(listener -> listener.onAdd(event.node));
+      } else if (event.newState == NodeState.UP) {
+        nodeStateListeners.forEach(listener -> listener.onUp(event.node));
+      } else if (event.newState == NodeState.DOWN || event.newState == NodeState.FORCED_DOWN) {
+        nodeStateListeners.forEach(listener -> listener.onDown(event.node));
+      }
+    }
+
     private void close() {
       assert adminExecutor.inEventLoop();
       if (closeWasCalled) {
@@ -242,6 +304,10 @@ public class DefaultCluster implements Cluster {
       closeWasCalled = true;
 
       LOG.debug("[{}] Starting shutdown", logPrefix);
+      for (NodeStateListener listener : nodeStateListeners) {
+        listener.onUnregister(DefaultCluster.this);
+      }
+      nodeStateListeners.clear();
       List<CompletionStage<Void>> childrenCloseStages = new ArrayList<>();
       closePolicies();
       for (AsyncAutoCloseable closeable : internalComponentsToClose()) {
