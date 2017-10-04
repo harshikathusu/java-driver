@@ -464,6 +464,63 @@ public class NodeStateIT {
           .onRemove(new DefaultNode(wrongContactPoint));
       Mockito.verify(localNodeStateListener, timeout(100)).onUp(localMetadataNode1);
       Mockito.verify(localNodeStateListener, timeout(100)).onAdd(localMetadataNode2);
+
+      // Note: there might be an additional onDown for wrongContactPoint if it was hit first at
+      // init. This is hard to test since the node was removed later, so we simply don't call
+      // verifyNoMoreInteractions.
+    }
+  }
+
+  @Test
+  public void should_mark_unreachable_contact_point_down() {
+    // This time we connect with two valid contact points, but is unresponsive, it should be marked
+    // down
+    Iterator<BoundNode> simulacronNodes = simulacron.cluster().getNodes().iterator();
+    BoundNode localSimulacronNode1 = simulacronNodes.next();
+    BoundNode localSimulacronNode2 = simulacronNodes.next();
+
+    InetSocketAddress address1 = localSimulacronNode1.inetSocketAddress();
+    InetSocketAddress address2 = localSimulacronNode2.inetSocketAddress();
+
+    NodeStateListener localNodeStateListener = Mockito.mock(NodeStateListener.class);
+
+    localSimulacronNode2.stop();
+    try {
+      // Since contact points are shuffled, we have a 50% chance that our bad contact point will be
+      // hit first. So we retry the scenario a few times if needed.
+      for (int i = 0; i < 10; i++) {
+        try (Cluster localCluster =
+            Cluster.builder()
+                .addContactPoint(address1)
+                .addContactPoint(address2)
+                .addNodeStateListeners(localNodeStateListener)
+                .withConfigLoader(
+                    new TestConfigLoader(
+                        "connection.reconnection-policy.base-delay = 1 hour",
+                        "connection.reconnection-policy.max-delay = 1 hour"))
+                .build()) {
+
+          Map<InetSocketAddress, Node> nodes = localCluster.getMetadata().getNodes();
+          Node localMetadataNode1 = nodes.get(address1);
+          Node localMetadataNode2 = nodes.get(address2);
+          if (localMetadataNode2.getState() == NodeState.DOWN) {
+            // Stopped node was tried first and marked down, that's our target scenario
+            Mockito.verify(localNodeStateListener, timeout(100)).onDown(localMetadataNode2);
+            Mockito.verify(localNodeStateListener, timeout(100)).onUp(localMetadataNode1);
+            Mockito.verifyNoMoreInteractions(localNodeStateListener);
+            return;
+          } else {
+            // Stopped node was not tried
+            assertThat(localMetadataNode2).isUnknown();
+            Mockito.verify(localNodeStateListener, timeout(100)).onUp(localMetadataNode1);
+            Mockito.verifyNoMoreInteractions(localNodeStateListener);
+          }
+        }
+        Mockito.reset(localNodeStateListener);
+      }
+      fail("Couldn't get the driver to try stopped node first (tried 5 times)");
+    } finally {
+      localSimulacronNode2.acceptConnections();
     }
   }
 

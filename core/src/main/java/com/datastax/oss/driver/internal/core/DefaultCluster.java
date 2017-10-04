@@ -226,6 +226,7 @@ public class DefaultCluster implements Cluster {
 
     private void afterInitialSchemaRefresh(@SuppressWarnings("unused") Void ignored) {
       try {
+        nodeStateManager.markInitialized();
         context.loadBalancingPolicyWrapper().init();
         context.configLoader().onDriverInit(context);
         LOG.debug("[{}] Initialization complete, ready", logPrefix);

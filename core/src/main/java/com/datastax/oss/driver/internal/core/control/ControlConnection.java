@@ -286,6 +286,7 @@ public class ControlConnection implements EventCallback, AsyncAutoCloseable {
                         Map<Node, Throwable> newErrors =
                             (errors == null) ? new LinkedHashMap<>() : errors;
                         newErrors.put(node, error);
+                        context.eventBus().fire(ChannelEvent.controlConnectionFailed(node));
                         connect(nodes, newErrors, onSuccess, onFailure);
                       }
                     } else if (closeWasCalled) {
