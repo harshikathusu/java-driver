@@ -430,7 +430,7 @@ public class DefaultSession implements Session {
                 logPrefix + "|" + pool.getNode().getConnectAddress(),
                 pool,
                 repreparePayloads,
-                config,
+                context,
                 () -> RunOrSchedule.on(adminExecutor, () -> onPoolReady(pool)))
             .start();
       } else {

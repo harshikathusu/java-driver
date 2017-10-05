@@ -19,6 +19,7 @@ import com.datastax.oss.driver.api.core.config.CoreDriverOption;
 import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.metadata.Metadata;
 import com.datastax.oss.driver.api.core.metadata.Node;
+import com.datastax.oss.driver.api.core.metadata.NodeState;
 import com.datastax.oss.driver.api.core.metadata.schema.SchemaChangeListener;
 import com.datastax.oss.driver.api.core.session.Session;
 import com.datastax.oss.driver.internal.core.util.concurrent.BlockingOperation;
@@ -105,6 +106,40 @@ public interface Cluster extends AsyncAutoCloseable {
   default Metadata refreshSchema() {
     BlockingOperation.checkNotDriverThread();
     return CompletableFutures.getUninterruptibly(refreshSchemaAsync());
+  }
+
+  /**
+   * Checks if all nodes in the cluster agree on a common schema version.
+   *
+   * <p>The goal of schema agreement is to ensure that a schema change has been propagated to all
+   * nodes before proceeding with the next queries (which might go to a different coordinator).
+   * Normally, you should not have to do that manually, because it's handled by the driver after all
+   * schema-altering queries. However, this method is provided in case schema agreement failed
+   * earlier and you want to check it again.
+   *
+   * <p>To check agreement, this method queries system tables to find out the schema version of all
+   * nodes that are currently {@code {@link NodeState#UP UP}}, and compares them. If the comparison
+   * fails, the whole process is retried at a regular interval until a timeout fires (both specified
+   * through the configuration).
+   *
+   * <p>Note that schema agreement never works in mixed-version clusters (if you're in the middle of
+   * a rolling upgrade, it's probably a bad time to modify the schema anyway).
+   *
+   * @return a future that completes with {@code true} if the nodes agree, or {@code false} if the
+   *     timeout fired.
+   * @see CoreDriverOption#CONTROL_CONNECTION_AGREEMENT_INTERVAL
+   * @see CoreDriverOption#CONTROL_CONNECTION_AGREEMENT_TIMEOUT
+   */
+  CompletionStage<Boolean> checkSchemaAgreementAsync();
+
+  /**
+   * Convenience method to call {@link #checkSchemaAgreementAsync()} and block for the result.
+   *
+   * <p>This must not be called on a driver thread.
+   */
+  default boolean checkSchemaAgreement() {
+    BlockingOperation.checkNotDriverThread();
+    return CompletableFutures.getUninterruptibly(checkSchemaAgreementAsync());
   }
 
   /** Returns a context that provides access to all the policies used by this driver instance. */

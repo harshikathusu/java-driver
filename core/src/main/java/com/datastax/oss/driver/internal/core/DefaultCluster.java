@@ -100,6 +100,11 @@ public class DefaultCluster implements Cluster {
   }
 
   @Override
+  public CompletionStage<Boolean> checkSchemaAgreementAsync() {
+    return context.topologyMonitor().checkSchemaAgreement();
+  }
+
+  @Override
   public DriverContext getContext() {
     return context;
   }
