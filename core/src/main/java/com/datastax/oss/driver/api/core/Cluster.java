@@ -85,8 +85,10 @@ public interface Cluster extends AsyncAutoCloseable {
    * @param newValue a boolean value to enable or disable schema metadata programmatically, or
    *     {@code null} to use the driver's configuration.
    * @see CoreDriverOption#METADATA_SCHEMA_ENABLED
+   * @return if this call triggered a refresh, a future that will complete when that refresh is
+   *     complete. Otherwise, a completed future with the current metadata.
    */
-  void setSchemaMetadataEnabled(Boolean newValue);
+  CompletionStage<Metadata> setSchemaMetadataEnabled(Boolean newValue);
 
   /**
    * Force an immediate refresh of the schema metadata, even if it is currently disabled (either in

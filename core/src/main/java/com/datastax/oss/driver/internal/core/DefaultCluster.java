@@ -90,8 +90,8 @@ public class DefaultCluster implements Cluster {
   }
 
   @Override
-  public void setSchemaMetadataEnabled(Boolean newValue) {
-    metadataManager.setSchemaEnabled(newValue);
+  public CompletionStage<Metadata> setSchemaMetadataEnabled(Boolean newValue) {
+    return metadataManager.setSchemaEnabled(newValue);
   }
 
   @Override

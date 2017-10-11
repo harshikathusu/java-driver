@@ -161,7 +161,7 @@ public class MetadataManager implements AsyncAutoCloseable {
 
   /**
    * @param keyspace if this refresh was triggered by an event, that event's keyspace, otherwise
-   *     null
+   *     null (this is only used to discard the event if it targets a keyspace that we're ignoring)
    * @param evenIfDisabled force the refresh even if schema is currently disabled (used for user
    *     request)
    * @param flushNow bypass the debouncer and force an immediate refresh (used to avoid a delay at
@@ -187,11 +187,13 @@ public class MetadataManager implements AsyncAutoCloseable {
         : schemaEnabledInConfig;
   }
 
-  public void setSchemaEnabled(Boolean newValue) {
+  public CompletionStage<Metadata> setSchemaEnabled(Boolean newValue) {
     boolean wasEnabledBefore = isSchemaEnabled();
     schemaEnabledProgrammatically = newValue;
     if (!wasEnabledBefore && isSchemaEnabled()) {
-      refreshSchema(null, false, true);
+      return refreshSchema(null, false, true);
+    } else {
+      return CompletableFuture.completedFuture(metadata);
     }
   }
 
