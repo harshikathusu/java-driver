@@ -19,6 +19,7 @@ import com.datastax.oss.driver.api.core.CqlIdentifier;
 import com.datastax.oss.driver.api.core.type.DataType;
 import com.datastax.oss.driver.api.core.type.UserDefinedType;
 import com.datastax.oss.driver.internal.core.metadata.schema.ScriptBuilder;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import java.util.Map;
 
@@ -39,6 +40,17 @@ public interface KeyspaceMetadata extends Describable {
   }
 
   Map<CqlIdentifier, ViewMetadata> getViews();
+
+  /** Gets the views based on a given table. */
+  default Map<CqlIdentifier, ViewMetadata> getViewsOnTable(CqlIdentifier tableId) {
+    ImmutableMap.Builder<CqlIdentifier, ViewMetadata> builder = ImmutableMap.builder();
+    for (ViewMetadata view : getViews().values()) {
+      if (view.getBaseTable().equals(tableId)) {
+        builder.put(view.getName(), view);
+      }
+    }
+    return builder.build();
+  }
 
   default ViewMetadata getView(CqlIdentifier viewId) {
     return getViews().get(viewId);
